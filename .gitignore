@@ -1,0 +1,7 @@
+/target
+
+Cargo.lock
+
+# Windows SDL2 binaries
+SDL2.lib
+SDL2.dll
