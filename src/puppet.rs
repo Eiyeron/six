@@ -4,6 +4,8 @@ use tetra::graphics::{self, Color};
 use tetra::window;
 use tetra::{self, Context, State};
 
+// [NOTE] Wouldn't that be better as a fully fledged FSM?
+
 // Allow for scene control from a Scene to the GameState
 pub enum Transition {
     None,
@@ -24,10 +26,13 @@ pub struct GameState {
 }
 
 impl GameState {
-    pub fn new(ctx: &mut Context) -> tetra::Result<GameState> {
+    pub fn new(
+        ctx: &mut Context,
+        starting_scene: impl Scene + 'static,
+    ) -> tetra::Result<GameState> {
         let assets = Assets::load(ctx);
         Ok(GameState {
-            scenes: vec![Box::new(crate::TestScene::new())],
+            scenes: vec![Box::new(starting_scene)],
             scaler: ScreenScaler::with_window_size(
                 ctx,
                 640,
@@ -63,9 +68,8 @@ impl State for GameState {
     fn draw(&mut self, ctx: &mut Context) -> tetra::Result {
         graphics::set_canvas(ctx, self.scaler.canvas());
 
-        match self.scenes.last_mut() {
-            Some(active_scene) => active_scene.draw(ctx, &self.assets)?,
-            None => (),
+        if let Some(active_scene) = self.scenes.last_mut() {
+            active_scene.draw(ctx, &self.assets)?;
         }
 
         graphics::reset_canvas(ctx);
