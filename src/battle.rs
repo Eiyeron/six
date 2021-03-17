@@ -136,6 +136,34 @@ fn damage(offense: u16, attack_level: u16, defense: u16) -> u16 {
 //     targets: Vec<&'b Actor>,
 // }
 
+// Engine states?
+
+enum MacroBattleStates {
+    CharacterTurnDecision,
+    AiTurnDecision,
+    TurnAction,
+    // Out of the loop
+    Intro,
+    Win,
+    GameOver,
+    // Overriding state transitions
+    CharacterFalls,
+}
+
+enum CharacterTurnSelectionStates {
+    Menu,
+    BashTargetSelection,
+    //
+    SpecialMoveSelection(u8), // TODO Class
+    SpecialTargetSelection,
+    //
+    ItemSelection,
+    ItemTargetSelection,
+    //
+}
+
+// Transition? We have either a small stack based FSM or a slightly more developped state machine here.
+
 // Scene?
 
 pub struct BattleScene {
@@ -155,6 +183,34 @@ impl BattleScene {
             enemies: vec![],
         }
     }
+
+    fn compute_hud_table(title: &str, actors: &[Actor]) -> String {
+        let mut actor_summary = {
+            if actors.len() > 0 {
+                format!("{}\n─────────┬───────\n", title)
+            } else {
+                format!("{}\n─────────────────\n", title)
+            }
+        };
+        for actor in actors.iter() {
+            let actor_line = format!(
+                "- {:3}/{:3}|{:3}/{:3}\n",
+                actor.hp.current_value, actor.hp.max, actor.pp.current_value, actor.pp.max,
+            );
+            actor_summary.push_str(&actor_line);
+        }
+        actor_summary
+    }
+
+    fn draw_debug_hud(&self, ctx: &mut Context, assets: &Assets) {
+        let character_summary = BattleScene::compute_hud_table("Characters", &self.characters);
+        let mut text = Text::new(character_summary, assets.headupdaisy.clone());
+        text.draw(ctx, DrawParams::new().position(Vec2::new(16., 16.)));
+
+        let enemy_summary = BattleScene::compute_hud_table("Enemies", &self.enemies);
+        let mut text = Text::new(enemy_summary, assets.headupdaisy.clone());
+        text.draw(ctx, DrawParams::new().position(Vec2::new(336., 16.)));
+    }
 }
 
 impl Scene for BattleScene {
@@ -173,20 +229,7 @@ impl Scene for BattleScene {
 
     fn draw(&mut self, ctx: &mut Context, assets: &Assets) -> tetra::Result<()> {
         graphics::clear(ctx, Color::BLUE);
-        let mut character_summary = String::from("Summary\n");
-        for (i, character) in self.characters.iter().enumerate() {
-            let character_line = format!(
-                "- {:3}/{:3}|{:3}/{:3}\n",
-                character.hp.current_value,
-                character.hp.max,
-                character.pp.current_value,
-                character.pp.max,
-            );
-            character_summary.push_str(&character_line);
-        }
-
-        let mut text = Text::new(character_summary, assets.headupdaisy.clone());
-        text.draw(ctx, DrawParams::new().position(Vec2::new(16., 16.)));
+        self.draw_debug_hud(ctx, assets);
         Ok(())
     }
 }

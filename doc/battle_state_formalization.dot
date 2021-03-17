@@ -1,0 +1,52 @@
+// Macro view of battle engine's state flow. No specific bits
+// like how the menu's or a turn's flow works.
+
+// The presence of the Character is K.O. event implies either that
+// the FSM is stack-based (comprising the substates) or that each state
+// handles themselves the event as an interruption.
+digraph {
+    subgraph macro_states {
+        node[shape=rect];
+        CharacterActionDecision;
+        AiTurnDecision;
+        TurnAction;
+        // Out of loop
+        Intro;
+        Win;
+        GameOver;
+    }
+    // Override?
+    CharacterKo;
+
+    // Intro should be seen as the fade-in and the small
+    // "X and its cohort jumped in the way!" message.
+    Intro -> CharacterActionDecision [label="Character faster"];
+    Intro -> AiTurnDecision [label="Enemy faster"];
+
+    // Macro state containing the menu flow of selecting
+    // an action and targets for each character able to move.
+    CharacterActionDecision -> AiTurnDecision [label="All actions determined"];
+    CharacterActionDecision -> CharacterKo [label="HP at 0"];
+
+    // Note that this state could be merged with the turn action.
+    AiTurnDecision -> TurnAction [label="All actions determined"];
+    AiTurnDecision -> CharacterKo [label="HP at 0"];
+    
+    // Rolling down the turns. Note that an action can be interrupted
+    // in many places if a character falls down or can even fail if
+    // the caster falls down before finishing the action.
+    // It's not my first rodeo, trust me, it's probably the most hairy
+    // part to do (that or the rhythm game of bashing. Audio/video
+    //sync looks so hard to make it right).
+    TurnAction -> TurnAction [label="Next action"];
+    TurnAction -> CharacterActionDecision [label="Turn done"];
+
+    TurnAction -> Win [label="No more enemies"];
+    TurnAction -> CharacterKo [label="HP at 0"];
+
+    // I haven't figured how I'd represent the stack-ish aspect
+    // of K.O. interruptions.
+    CharacterKo -> TurnAction[label="Continue or fail action"];
+    CharacterKo -> CharacterActionDecision[label="Turn done"];
+    CharacterKo -> GameOver[label="No more characters"];
+}
