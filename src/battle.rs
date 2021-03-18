@@ -1,12 +1,14 @@
 // Structs
 
+mod action_decision;
+
+use crate::battle::action_decision::CharacterTurnDecisionState;
 use crate::Assets;
 use crate::Scene;
 use crate::Transition;
 use rand::Rng;
-use tetra::graphics;
 use tetra::graphics::text::Text;
-use tetra::graphics::{Color, DrawParams};
+use tetra::graphics::{self, Color, DrawParams};
 use tetra::math::Vec2;
 use tetra::time;
 use tetra::Context;
@@ -76,6 +78,7 @@ impl Stat {
 }
 
 pub struct Actor {
+    pub name: String,
     pub hp: RollingMeter,
     pub pp: RollingMeter,
     pub offense: Stat,
@@ -87,6 +90,7 @@ pub struct Actor {
 
 impl Actor {
     fn from_stats(
+        name: &str,
         hp: u16,
         max_hp: u16,
         pp: u16,
@@ -97,6 +101,7 @@ impl Actor {
         iq: u16,
     ) -> Actor {
         Actor {
+            name: String::from(name),
             hp: RollingMeter::new(hp, max_hp),
             pp: RollingMeter::new(pp, max_pp),
             offense: Stat::new(offense),
@@ -136,10 +141,23 @@ fn damage(offense: u16, attack_level: u16, defense: u16) -> u16 {
 //     targets: Vec<&'b Actor>,
 // }
 
-// Engine states?
+enum UIAction {
+    Up,
+    Down,
+    Left,
+    Right,
+    PagePrev, // For paginated ui
+    PageNext,
+    Validate,
+    Cancel, // Also works as back
+}
+
+trait Drawable {
+    fn draw(&mut self, ctx: &mut Context, assets: &Assets) -> tetra::Result<()>;
+}
 
 enum MacroBattleStates {
-    CharacterTurnDecision,
+    CharacterTurnDecision(CharacterTurnDecisionState),
     AiTurnDecision,
     TurnAction,
     // Out of the loop
@@ -150,52 +168,52 @@ enum MacroBattleStates {
     CharacterFalls,
 }
 
-enum CharacterTurnSelectionStates {
-    Menu,
-    BashTargetSelection,
-    //
-    SpecialMoveSelection(u8), // TODO Class
-    SpecialTargetSelection,
-    //
-    ItemSelection,
-    ItemTargetSelection,
-    //
-}
-
-// Transition? We have either a small stack based FSM or a slightly more developped state machine here.
+// Transition? We have either a small stack based FSM or a slightly more
+// developped state machine here.
 
 // Scene?
 
 pub struct BattleScene {
     pub characters: Vec<Actor>,
     pub enemies: Vec<Actor>,
+    // Test
+    // Stack?
+    state: MacroBattleStates,
 }
 
 impl BattleScene {
     pub fn dummy() -> BattleScene {
+        let characters = vec![
+            Actor::from_stats("One", 98, 98, 46, 46, 45, 22, 16, 10),
+            Actor::from_stats("Two", 115, 115, 0, 0, 35, 27, 12, 21),
+            Actor::from_stats("Three", 82, 82, 73, 73, 28, 29, 20, 16),
+            Actor::from_stats("Four", 67, 67, 0, 0, 32, 20, 9, 23),
+        ];
         BattleScene {
-            characters: vec![
-                Actor::from_stats(98, 98, 46, 46, 45, 22, 16, 10),
-                Actor::from_stats(115, 115, 0, 0, 35, 27, 12, 21),
-                Actor::from_stats(82, 82, 73, 73, 28, 29, 20, 16),
-                Actor::from_stats(67, 67, 0, 0, 32, 20, 9, 23),
-            ],
-            enemies: vec![],
+            enemies: vec![Actor::from_stats("Robot", 53, 53, 0, 0, 35, 10, 17, 8)],
+            state: MacroBattleStates::CharacterTurnDecision(
+                CharacterTurnDecisionState::new_turn(&characters).unwrap(),
+            ),
+            characters: characters,
         }
     }
 
     fn compute_hud_table(title: &str, actors: &[Actor]) -> String {
         let mut actor_summary = {
-            if actors.len() > 0 {
-                format!("{}\n─────────┬───────\n", title)
+            if actors.is_empty() {
+                format!("{}\n────────────────\n", title)
             } else {
-                format!("{}\n─────────────────\n", title)
+                format!("{}\n────────┬───────\n", title)
             }
         };
         for actor in actors.iter() {
             let actor_line = format!(
-                "- {:3}/{:3}|{:3}/{:3}\n",
-                actor.hp.current_value, actor.hp.max, actor.pp.current_value, actor.pp.max,
+                "{:8}|\n {:3}/{:3}|{:3}/{:3}\n",
+                actor.name,
+                actor.hp.current_value,
+                actor.hp.max,
+                actor.pp.current_value,
+                actor.pp.max,
             );
             actor_summary.push_str(&actor_line);
         }
@@ -224,12 +242,27 @@ impl Scene for BattleScene {
             enemy.hp.update(dt);
             enemy.pp.update(dt);
         }
+
+        match &self.state {
+            MacroBattleStates::CharacterTurnDecision(_) => {
+                CharacterTurnDecisionState::update(self, ctx)
+            }
+            _ => (),
+        }
+
         Ok(Transition::None)
     }
 
     fn draw(&mut self, ctx: &mut Context, assets: &Assets) -> tetra::Result<()> {
         graphics::clear(ctx, Color::BLUE);
         self.draw_debug_hud(ctx, assets);
+
+        match &self.state {
+            MacroBattleStates::CharacterTurnDecision(_) => {
+                CharacterTurnDecisionState::draw(&self, ctx, assets)
+            }
+            _ => (),
+        }
         Ok(())
     }
 }
