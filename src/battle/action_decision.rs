@@ -59,7 +59,7 @@ impl CharacterTurnDecisionState {
     pub fn update(scene: &mut BattleScene, ctx: &Context) {
         if let MacroBattleStates::CharacterTurnDecision(sub_state) = &mut scene.state {
             let result = match sub_state {
-                CharacterTurnDecisionState::Menu(menu) => menu.update(ctx, &self.characters),
+                CharacterTurnDecisionState::Menu(menu) => menu.update(&scene.characters, ctx),
                 CharacterTurnDecisionState::Bash(bash) => {
                     bash.update(ctx, &scene.characters, &scene.enemies)
                 }
@@ -122,7 +122,7 @@ pub struct Menu {
 impl Menu {
     const MENU_NAMES: &'static [&'static str] = &["Bash", "PSI", "Item", "Guard", "Flee"];
 
-    fn update(&mut self, characters:&[Actor] ctx: &Context) -> Transition {
+    fn update(&mut self, characters: &[Actor], ctx: &Context) -> Transition {
         if is_key_pressed(ctx, Key::Left) {
             if self.shared.current_item > 0 {
                 self.shared.current_item -= 1;
@@ -153,9 +153,7 @@ impl Menu {
             if self.shared.current_item == 4 {
                 return Transition::Validate(AllyActionRecord {
                     id: self.shared.current_character,
-                    registered_speed: characters[self.shared.current_character]
-                        .speed
-                        .multiplied(),
+                    registered_speed: characters[self.shared.current_character].speed.multiplied(),
                     action_type: ActionType::Guard,
                 });
             }
