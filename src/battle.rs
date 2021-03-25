@@ -1,12 +1,16 @@
 // Structs
 
 mod action_decision;
+mod turn_preparation;
 
+use crate::battle::action_decision::AllyActionRecord;
 use crate::battle::action_decision::CharacterTurnDecisionState;
+use crate::battle::turn_preparation::TurnPreparationState;
 use crate::Assets;
 use crate::Scene;
 use crate::Transition;
 use rand::Rng;
+use std::cmp::Ordering;
 use tetra::graphics::text::Text;
 use tetra::graphics::{self, Color, DrawParams};
 use tetra::math::Vec2;
@@ -136,11 +140,6 @@ fn damage(offense: u16, attack_level: u16, defense: u16) -> u16 {
 
 // Turn structure idea
 
-// struct TurnAction<'a, 'b> {
-//     caster: &'a Actor,
-//     targets: Vec<&'b Actor>,
-// }
-
 enum UIAction {
     Up,
     Down,
@@ -158,8 +157,8 @@ trait Drawable {
 
 enum MacroBattleStates {
     CharacterTurnDecision(CharacterTurnDecisionState),
-    AiTurnDecision,
-    TurnAction,
+    TurnPreparation(TurnPreparationState),
+    TurnUnroll,
     // Out of the loop
     Intro,
     Win,
@@ -168,15 +167,36 @@ enum MacroBattleStates {
     CharacterFalls,
 }
 
-// Transition? We have either a small stack based FSM or a slightly more
-// developped state machine here.
+pub enum ActionType {
+    Bash,
+    Psi,
+    Item,
+    Guard,
+    // ???
+}
+
+// Epiphany : the action could determine itself the target instead of hard-coding it.
+// Even better : the AI would decice when it's their turn
 
 // Scene?
+
+pub enum Team {
+    Ally,
+    Enemy,
+}
+
+pub struct TurnAction {
+    id_in_team: usize,
+    team: Team,
+    speed: u16,
+}
 
 pub struct BattleScene {
     pub characters: Vec<Actor>,
     pub enemies: Vec<Actor>,
     // Test
+    allies_actions: Vec<AllyActionRecord>,
+    next_turn_order: Vec<TurnAction>,
     // Stack?
     state: MacroBattleStates,
 }
@@ -191,6 +211,8 @@ impl BattleScene {
         ];
         BattleScene {
             enemies: vec![Actor::from_stats("Robot", 53, 53, 0, 0, 35, 10, 17, 8)],
+            allies_actions: vec![],
+            next_turn_order: vec![],
             state: MacroBattleStates::CharacterTurnDecision(
                 CharacterTurnDecisionState::new_turn(&characters).unwrap(),
             ),
@@ -247,6 +269,7 @@ impl Scene for BattleScene {
             MacroBattleStates::CharacterTurnDecision(_) => {
                 CharacterTurnDecisionState::update(self, ctx)
             }
+            MacroBattleStates::TurnPreparation(_) => TurnPreparationState::update(self, ctx),
             _ => (),
         }
 
@@ -261,6 +284,7 @@ impl Scene for BattleScene {
             MacroBattleStates::CharacterTurnDecision(_) => {
                 CharacterTurnDecisionState::draw(&self, ctx, assets)
             }
+            MacroBattleStates::TurnPreparation(_) => TurnPreparationState::draw(&self, ctx, assets),
             _ => (),
         }
         Ok(())
