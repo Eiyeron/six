@@ -1,8 +1,8 @@
-use crate::battle::CharacterTurnDecisionState;
 use crate::battle::MacroBattleStates;
-use crate::battle::MacroBattleStates::CharacterTurnDecision;
+use crate::battle::MacroBattleStates::TurnUnroll;
 use crate::battle::Team;
 use crate::battle::TurnAction;
+use crate::battle::TurnUnrollState;
 use crate::Assets;
 use crate::BattleScene;
 use tetra::graphics::text::Text;
@@ -15,9 +15,9 @@ pub struct TurnPreparationState;
 impl TurnPreparationState {
     pub fn update(scene: &mut BattleScene, _ctx: &Context) {
         if let MacroBattleStates::TurnPreparation(_) = &mut scene.state {
-            let mut turn_order = vec![];
+            scene.turn_order.clear();
             for action in scene.allies_actions.iter() {
-                turn_order.push(TurnAction {
+                scene.turn_order.push_back(TurnAction {
                     team: Team::Ally,
                     speed: action.registered_speed,
                     id_in_team: action.id,
@@ -25,20 +25,21 @@ impl TurnPreparationState {
             }
             for (id, enemy) in scene.enemies.iter().enumerate() {
                 if enemy.hp.current_value > 0 {
-                    turn_order.push(TurnAction {
+                    scene.turn_order.push_back(TurnAction {
                         team: Team::Enemy,
                         speed: enemy.speed.multiplied(),
                         id_in_team: id,
                     })
                 }
             }
-            turn_order.sort_by(|a, b| b.speed.cmp(&a.speed)); // Reverse order
-            turn_order.reverse();
+            scene
+                .turn_order
+                .make_contiguous()
+                .sort_by(|a, b| b.speed.cmp(&a.speed)); // Reverse order
+            scene.turn_order.make_contiguous().reverse();
             // TODO Consume actions (unroll turn)
             scene.allies_actions.clear();
-            scene.state = CharacterTurnDecision(
-                CharacterTurnDecisionState::new_turn(&scene.characters).unwrap(),
-            );
+            scene.state = TurnUnroll(TurnUnrollState::new());
         }
     }
     pub fn draw(_scene: &BattleScene, ctx: &mut Context, assets: &Assets) {

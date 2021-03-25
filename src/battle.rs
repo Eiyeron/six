@@ -1,16 +1,18 @@
 // Structs
 
 mod action_decision;
+mod turn;
 mod turn_preparation;
 
 use crate::battle::action_decision::AllyActionRecord;
 use crate::battle::action_decision::CharacterTurnDecisionState;
+use crate::battle::turn::TurnUnrollState;
 use crate::battle::turn_preparation::TurnPreparationState;
 use crate::Assets;
 use crate::Scene;
 use crate::Transition;
 use rand::Rng;
-use std::cmp::Ordering;
+use std::collections::VecDeque;
 use tetra::graphics::text::Text;
 use tetra::graphics::{self, Color, DrawParams};
 use tetra::math::Vec2;
@@ -158,7 +160,7 @@ trait Drawable {
 enum MacroBattleStates {
     CharacterTurnDecision(CharacterTurnDecisionState),
     TurnPreparation(TurnPreparationState),
-    TurnUnroll,
+    TurnUnroll(TurnUnrollState),
     // Out of the loop
     Intro,
     Win,
@@ -196,7 +198,7 @@ pub struct BattleScene {
     pub enemies: Vec<Actor>,
     // Test
     allies_actions: Vec<AllyActionRecord>,
-    next_turn_order: Vec<TurnAction>,
+    turn_order: VecDeque<TurnAction>,
     // Stack?
     state: MacroBattleStates,
 }
@@ -212,7 +214,7 @@ impl BattleScene {
         BattleScene {
             enemies: vec![Actor::from_stats("Robot", 53, 53, 0, 0, 35, 10, 17, 8)],
             allies_actions: vec![],
-            next_turn_order: vec![],
+            turn_order: VecDeque::new(),
             state: MacroBattleStates::CharacterTurnDecision(
                 CharacterTurnDecisionState::new_turn(&characters).unwrap(),
             ),
@@ -270,6 +272,7 @@ impl Scene for BattleScene {
                 CharacterTurnDecisionState::update(self, ctx)
             }
             MacroBattleStates::TurnPreparation(_) => TurnPreparationState::update(self, ctx),
+            MacroBattleStates::TurnUnroll(_) => TurnUnrollState::update(self, ctx),
             _ => (),
         }
 
@@ -285,6 +288,7 @@ impl Scene for BattleScene {
                 CharacterTurnDecisionState::draw(&self, ctx, assets)
             }
             MacroBattleStates::TurnPreparation(_) => TurnPreparationState::draw(&self, ctx, assets),
+            MacroBattleStates::TurnUnroll(_) => TurnUnrollState::draw(&self, ctx, assets),
             _ => (),
         }
         Ok(())
