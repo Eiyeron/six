@@ -12,7 +12,7 @@ use tetra::math::Vec2;
 use tetra::Context;
 
 pub struct AllyActionRecord {
-    pub id: usize,
+    pub id_in_team: usize,
     pub registered_speed: u16,
     pub action_type: ActionType,
 }
@@ -34,7 +34,7 @@ impl CharacterTurnDecisionState {
         if let Some((i, _)) = characters
             .iter()
             .enumerate()
-            .find(|(_, c)| c.hp.current_value > 0)
+            .find(|(_, c)| c.hp.current_and_max().0 > 0)
         {
             return Some(CharacterTurnDecisionState::Menu(Menu {
                 shared: Breadcrumbs {
@@ -71,17 +71,17 @@ impl CharacterTurnDecisionState {
                     scene.state = MacroBattleStates::CharacterTurnDecision(new_state)
                 }
                 Transition::Validate(action) => {
-                    if action.id == scene.characters.len() - 1 {
+                    if action.id_in_team == scene.characters.len() - 1 {
                         // TODO Whole turn system
                         scene.state = MacroBattleStates::TurnPreparation(TurnPreparationState {});
                     } else {
                         // TODO Whole turn system and action structure passing.
                         scene.state = CharacterTurnDecisionState::next_character(
                             &scene.characters,
-                            action.id,
+                            action.id_in_team,
                         );
-                        scene.allies_actions.push(action);
                     }
+                    scene.allies_actions.push(action);
                 }
             }
         }
@@ -152,7 +152,7 @@ impl Menu {
             }
             if self.shared.current_item == 4 {
                 return Transition::Validate(AllyActionRecord {
-                    id: self.shared.current_character,
+                    id_in_team: self.shared.current_character,
                     registered_speed: characters[self.shared.current_character].speed.multiplied(),
                     action_type: ActionType::Guard,
                 });
@@ -208,7 +208,7 @@ impl BashTargetSelection {
 
         if is_key_pressed(ctx, Key::Enter) {
             return Transition::Validate(AllyActionRecord {
-                id: self.shared.current_character,
+                id_in_team: self.shared.current_character,
                 // TODO passing target id
                 action_type: ActionType::Bash,
                 registered_speed: allies[self.shared.current_character].speed.multiplied(),

@@ -1,10 +1,7 @@
 use crate::battle::MacroBattleStates;
 use crate::battle::MacroBattleStates::TurnUnroll;
-use crate::battle::Team;
-use crate::battle::TurnAction;
-use crate::battle::TurnUnrollState;
-use crate::Assets;
-use crate::BattleScene;
+use crate::battle::{Team, TurnAction, TurnUnrollState};
+use crate::{Assets, BattleScene};
 use tetra::graphics::text::Text;
 use tetra::graphics::DrawParams;
 use tetra::math::Vec2;
@@ -20,15 +17,17 @@ impl TurnPreparationState {
                 scene.turn_order.push_back(TurnAction {
                     team: Team::Ally,
                     speed: action.registered_speed,
-                    id_in_team: action.id,
+                    id_in_team: action.id_in_team,
                 })
             }
             for (id, enemy) in scene.enemies.iter().enumerate() {
-                if enemy.hp.current_value > 0 {
+                let (current_hp, _) = enemy.hp.current_and_max();
+                if current_hp > 0 {
                     scene.turn_order.push_back(TurnAction {
-                        team: Team::Enemy,
-                        speed: enemy.speed.multiplied(),
                         id_in_team: id,
+                        team: Team::Enemy,
+                        // TODO randomized speed
+                        speed: enemy.speed.multiplied(),
                     })
                 }
             }
@@ -38,7 +37,6 @@ impl TurnPreparationState {
                 .sort_by(|a, b| b.speed.cmp(&a.speed)); // Reverse order
             scene.turn_order.make_contiguous().reverse();
             // TODO Consume actions (unroll turn)
-            scene.allies_actions.clear();
             scene.state = TurnUnroll(TurnUnrollState::new());
         }
     }

@@ -4,10 +4,10 @@ mod action_decision;
 mod turn;
 mod turn_preparation;
 
-use crate::battle::action_decision::AllyActionRecord;
-use crate::battle::action_decision::CharacterTurnDecisionState;
+use crate::battle::action_decision::{AllyActionRecord, CharacterTurnDecisionState};
 use crate::battle::turn::TurnUnrollState;
 use crate::battle::turn_preparation::TurnPreparationState;
+use crate::meters::{InstantMeter, Meter, RollingMeter};
 use crate::Assets;
 use crate::Scene;
 use crate::Transition;
@@ -18,46 +18,6 @@ use tetra::graphics::{self, Color, DrawParams};
 use tetra::math::Vec2;
 use tetra::time;
 use tetra::Context;
-
-/// One of the two not-so-unique selling points of this battle engine
-pub struct RollingMeter {
-    pub current_value: u16,
-    pub target_value: u16,
-    pub max: u16,
-    pub accumulator: f32,
-    // Speed? Rate?
-}
-
-impl RollingMeter {
-    fn new(current: u16, max: u16) -> RollingMeter {
-        RollingMeter {
-            current_value: current,
-            max,
-            target_value: current,
-            accumulator: 0.,
-        }
-    }
-
-    fn update(&mut self, dt: f32) {
-        if self.current_value == self.target_value {
-            return;
-        }
-
-        self.accumulator += dt;
-        // TODO Speed? Rate?
-        // TODO While >= 1.
-        if self.accumulator >= 1. {
-            self.current_value = {
-                if self.current_value < self.target_value {
-                    self.current_value + 1
-                } else {
-                    self.current_value - 1
-                }
-            };
-            self.accumulator = self.accumulator.fract();
-        }
-    }
-}
 
 pub struct Stat {
     pub base: u16,
@@ -85,8 +45,8 @@ impl Stat {
 
 pub struct Actor {
     pub name: String,
-    pub hp: RollingMeter,
-    pub pp: RollingMeter,
+    pub hp: Meter,
+    pub pp: Meter,
     pub offense: Stat,
     pub defense: Stat,
     pub speed: Stat,
@@ -95,7 +55,8 @@ pub struct Actor {
 }
 
 impl Actor {
-    fn from_stats(
+    // Enemies use instant meters.
+    fn enemy_from_stats(
         name: &str,
         hp: u16,
         max_hp: u16,
@@ -108,12 +69,43 @@ impl Actor {
     ) -> Actor {
         Actor {
             name: String::from(name),
-            hp: RollingMeter::new(hp, max_hp),
-            pp: RollingMeter::new(pp, max_pp),
+            hp: Meter::Instant(InstantMeter::new(hp, max_hp)),
+            pp: Meter::Instant(InstantMeter::new(pp, max_pp)),
             offense: Stat::new(offense),
             defense: Stat::new(defense),
             speed: Stat::new(speed),
             iq: Stat::new(iq),
+        }
+    }
+
+    // Characters use rolling meters.
+    fn character_from_stats(
+        name: &str,
+        hp: u16,
+        max_hp: u16,
+        pp: u16,
+        max_pp: u16,
+        offense: u16,
+        defense: u16,
+        speed: u16,
+        iq: u16,
+    ) -> Actor {
+        Actor {
+            name: String::from(name),
+            hp: Meter::Rolling(RollingMeter::new(hp, max_hp)),
+            pp: Meter::Rolling(RollingMeter::new(pp, max_pp)),
+            offense: Stat::new(offense),
+            defense: Stat::new(defense),
+            speed: Stat::new(speed),
+            iq: Stat::new(iq),
+        }
+    }
+    fn update_meters(&mut self, dt: f32) {
+        if let Meter::Rolling(meter) = &mut self.hp {
+            meter.update(dt)
+        }
+        if let Meter::Rolling(meter) = &mut self.pp {
+            meter.update(dt)
         }
     }
 }
@@ -206,19 +198,21 @@ pub struct BattleScene {
 impl BattleScene {
     pub fn dummy() -> BattleScene {
         let characters = vec![
-            Actor::from_stats("One", 98, 98, 46, 46, 45, 22, 16, 10),
-            Actor::from_stats("Two", 115, 115, 0, 0, 35, 27, 12, 21),
-            Actor::from_stats("Three", 82, 82, 73, 73, 28, 29, 20, 16),
-            Actor::from_stats("Four", 67, 67, 0, 0, 32, 20, 9, 23),
+            Actor::character_from_stats("One", 98, 98, 46, 46, 45, 22, 16, 10),
+            Actor::character_from_stats("Two", 115, 115, 0, 0, 35, 27, 12, 21),
+            Actor::character_from_stats("Three", 82, 82, 73, 73, 28, 29, 20, 16),
+            Actor::character_from_stats("Four", 67, 67, 0, 0, 32, 20, 9, 23),
         ];
         BattleScene {
-            enemies: vec![Actor::from_stats("Robot", 53, 53, 0, 0, 35, 10, 17, 8)],
+            enemies: vec![Actor::enemy_from_stats(
+                "Robot", 53, 53, 0, 0, 35, 10, 17, 8,
+            )],
             allies_actions: vec![],
             turn_order: VecDeque::new(),
             state: MacroBattleStates::CharacterTurnDecision(
                 CharacterTurnDecisionState::new_turn(&characters).unwrap(),
             ),
-            characters: characters,
+            characters,
         }
     }
 
@@ -231,13 +225,11 @@ impl BattleScene {
             }
         };
         for actor in actors.iter() {
+            let (hp, max_hp) = actor.hp.current_and_max();
+            let (pp, max_pp) = actor.pp.current_and_max();
             let actor_line = format!(
                 "{:8}|\n {:3}/{:3}|{:3}/{:3}\n",
-                actor.name,
-                actor.hp.current_value,
-                actor.hp.max,
-                actor.pp.current_value,
-                actor.pp.max,
+                actor.name, hp, max_hp, pp, max_pp,
             );
             actor_summary.push_str(&actor_line);
         }
@@ -258,13 +250,16 @@ impl BattleScene {
 impl Scene for BattleScene {
     fn update(&mut self, ctx: &mut Context, _assets: &Assets) -> tetra::Result<Transition> {
         let dt = time::get_delta_time(ctx).as_secs_f32();
-        for character in self.characters.iter_mut() {
-            character.hp.update(dt);
-            character.pp.update(dt);
-        }
         for enemy in self.enemies.iter_mut() {
-            enemy.hp.update(dt);
-            enemy.pp.update(dt);
+            enemy.update_meters(dt);
+        }
+        for character in self.characters.iter_mut() {
+            let (previous_hp, _) = character.hp.current_and_max();
+            character.update_meters(dt);
+            if previous_hp > 0 && character.hp.current_and_max().0 == 0 {
+                println!("{} is K.O.", character.name);
+                // TODO death signaling
+            }
         }
 
         match &self.state {

@@ -1,4 +1,5 @@
 mod battle;
+mod meters;
 mod puppet;
 
 use crate::battle::BattleScene;
