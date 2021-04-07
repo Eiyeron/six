@@ -19,6 +19,9 @@ use tetra::math::Vec2;
 use tetra::time;
 use tetra::Context;
 
+use self::turn::Action;
+
+#[derive(Clone, Copy)]
 pub struct Stat {
     pub base: u16,
     pub modifier: i16,
@@ -43,6 +46,8 @@ impl Stat {
     }
 }
 
+//Copying it for action exectuion
+#[derive(Clone)]
 pub struct Actor {
     pub name: String,
     pub hp: Meter,
@@ -125,7 +130,7 @@ fn get_stat_multiplier(modifier: i16) -> f32 {
     }
 }
 
-fn damage(offense: u16, attack_level: u16, defense: u16) -> u16 {
+pub fn damage(offense: u16, attack_level: u16, defense: u16) -> u16 {
     let mut rng = rand::thread_rng();
     let random_multiplier = rng.gen_range(0.75..1.25);
     let base = attack_level * offense - defense;
@@ -174,9 +179,19 @@ pub enum ActionType {
 
 // Scene?
 
+#[derive(Clone)]
 pub enum Team {
     Ally,
     Enemy,
+}
+
+type ActorIdentifier = (Team, usize);
+
+#[derive(Clone)]
+// TODO ?
+enum ActionTarget {
+    Single(ActorIdentifier),
+    WholeTeam(Team),
 }
 
 pub struct TurnAction {

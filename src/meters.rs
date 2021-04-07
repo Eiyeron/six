@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 pub enum Meter {
     Instant(InstantMeter),
     Rolling(RollingMeter),
@@ -10,9 +11,17 @@ impl Meter {
             Meter::Instant(m) => (m.current_value, m.max),
         }
     }
+
+    pub fn hit(&mut self, how_much: u16) {
+        match self {
+            Meter::Rolling(m) => m.target_value = m.target_value.saturating_sub(how_much),
+            Meter::Instant(m) => m.current_value = m.current_value.saturating_sub(how_much),
+        }
+    }
 }
 
 /// A stat meter without a time component.
+#[derive(Clone, Copy)]
 pub struct InstantMeter {
     pub current_value: u16,
     pub max: u16,
@@ -25,6 +34,7 @@ impl InstantMeter {
 }
 
 /// One of the two not-so-unique selling points of this battle engine
+#[derive(Clone, Copy)]
 pub struct RollingMeter {
     pub current_value: u16,
     pub target_value: u16,

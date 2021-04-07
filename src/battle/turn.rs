@@ -1,5 +1,9 @@
+use std::rc::Rc;
+
 use crate::battle::action_decision::CharacterTurnDecisionState;
 use crate::battle::ActionType;
+use crate::battle::Actor;
+use crate::battle::ActorIdentifier;
 use crate::battle::MacroBattleStates;
 use crate::battle::Team;
 use crate::battle::TurnAction;
@@ -10,50 +14,97 @@ use tetra::graphics::DrawParams;
 use tetra::math::Vec2;
 use tetra::Context;
 
+use super::{damage, ActionTarget};
+
+pub trait Action {
+    fn go(&mut self, caster: &Actor, targets: &mut [Actor], ctx: &Context) -> SubStateTransition;
+}
+
 // TODO Maybe merge with TurnSubState
 pub struct TurnUnrollState {
     sub_state: TurnSubState,
 }
-enum SubStateTransition {
+pub enum SubStateTransition {
     None,
     NextSubState(TurnSubState),
     EndOfTurn,
 }
 
+// There's probably a better solution than a shared pointer to store the Action.
 struct Announce {
     time: f32,
+    announced_action: Rc<dyn Action>,
+    caster: ActorIdentifier,
+    // TODO Keep track of target
+    target: ActionTarget,
 }
 impl Announce {
-    pub fn new() -> Announce {
-        Announce { time: 0. }
+    pub fn new(
+        announced_action: Rc<dyn Action>,
+        caster: ActorIdentifier,
+        target: ActionTarget,
+    ) -> Announce {
+        Announce {
+            time: 0.,
+            announced_action,
+            caster,
+            target,
+        }
     }
-
     pub fn update(&mut self, ctx: &Context) -> SubStateTransition {
         self.time += tetra::time::get_delta_time(ctx).as_secs_f32();
         if self.time >= 1. {
             println!("Going to Act!");
-            return SubStateTransition::NextSubState(TurnSubState::DoIt(DoIt::new()));
+            return SubStateTransition::NextSubState(TurnSubState::DoIt(DoIt::new(
+                self.announced_action.clone(),
+                self.caster.clone(),
+                // TODO Keep track of target
+                self.target.clone(),
+            )));
         }
         SubStateTransition::None
+    }
+}
+
+struct Bash {
+    time: f32,
+}
+
+impl Bash {
+    fn new() -> Bash {
+        Bash { time: 0. }
+    }
+}
+
+impl Action for Bash {
+    fn go(&mut self, caster: &Actor, targets: &mut [Actor], ctx: &Context) -> SubStateTransition {
+        self.time += tetra::time::get_delta_time(ctx).as_secs_f32();
+        if self.time < 1. {
+            return SubStateTransition::None;
+        }
+        let caster_offense = caster.offense.multiplied();
+
+        for target in targets.iter_mut() {
+            let dmg = damage(caster_offense, 1, target.defense.multiplied());
+            target.hp.hit(dmg);
+        }
+        SubStateTransition::NextSubState(TurnSubState::NextAction)
     }
 }
 
 struct DoIt {
-    time: f32,
+    action: Rc<dyn Action>,
+    caster: ActorIdentifier,
+    target: ActionTarget,
 }
 
 impl DoIt {
-    pub fn new() -> DoIt {
-        DoIt { time: 0. }
-    }
-
-    pub fn update(&mut self, ctx: &Context) -> SubStateTransition {
-        self.time += tetra::time::get_delta_time(ctx).as_secs_f32();
-        if self.time >= 1. {
-            println!("Pow!");
-            return SubStateTransition::NextSubState(TurnSubState::NextAction);
+    pub fn new(action: Rc<dyn Action>, caster: ActorIdentifier, target: ActionTarget) -> DoIt {
+        DoIt {
+            action,
+            caster,
+            target,
         }
-        SubStateTransition::None
     }
 }
 
@@ -81,7 +132,7 @@ impl TurnUnrollState {
             println!("Skipping action because K.O.");
             return SubStateTransition::NextSubState(TurnSubState::NextAction);
         }
-        let action = match scene
+        let action_record = match scene
             .allies_actions
             .iter()
             .find(|rec| rec.id_in_team == action.id_in_team)
@@ -89,7 +140,7 @@ impl TurnUnrollState {
             Some(a) => a,
             _ => unreachable!("[ERROR] An action record should always involve a character."),
         };
-        let action_str = match action.action_type {
+        let action_str = match action_record.action_type {
             ActionType::Bash => "Bash",
             ActionType::Psi => "PSI",
             ActionType::Item => "Item",
@@ -97,9 +148,19 @@ impl TurnUnrollState {
         };
         println!(
             "→ {} ({}) will act ({})",
-            ally.name, action.id_in_team, action_str
+            ally.name, action_record.id_in_team, action_str
         );
-        SubStateTransition::NextSubState(TurnSubState::Announce(Announce::new()))
+        let action = match action_record.action_type {
+            ActionType::Bash => Rc::new(Bash::new()),
+            _ => unimplemented!(),
+        };
+        let caster = (Team::Ally, action_record.id_in_team);
+        // TODO Keep track of target
+        let target = ActionTarget::Single((Team::Enemy, 0));
+
+        SubStateTransition::NextSubState(TurnSubState::Announce(Announce::new(
+            action, caster, target,
+        )))
     }
 
     fn end_of_turn(scene: &mut BattleScene) -> SubStateTransition {
@@ -117,7 +178,12 @@ impl TurnUnrollState {
             Team::Enemy => {
                 let enemy = &scene.enemies[next_action.id_in_team];
                 println!("→ {} ({}) will do", enemy.name, next_action.id_in_team);
-                SubStateTransition::NextSubState(TurnSubState::Announce(Announce::new()))
+                let action = Rc::new(Bash::new());
+                SubStateTransition::NextSubState(TurnSubState::Announce(Announce::new(
+                    action,
+                    (Team::Enemy, next_action.id_in_team),
+                    ActionTarget::Single((Team::Ally, 0)),
+                )))
             }
         }
     }
@@ -137,7 +203,36 @@ impl TurnUnrollState {
                 // TODO Pass around the action data
                 // TODO determine what the AI should do in their turn
                 // TODO Apply damage
-                TurnSubState::DoIt(do_it) => do_it.update(ctx),
+                TurnSubState::DoIt(do_it) => {
+                    // Cloning the caster allows for broad selection.
+                    // Think as a snapshot. Sadly it also copies the name for now.
+                    // TODO avoid cloning the name
+                    let caster = match do_it.caster.0 {
+                        Team::Ally => scene.characters[do_it.caster.1].clone(),
+                        Team::Enemy => scene.enemies[do_it.caster.1].clone(),
+                    };
+
+                    let characters = &mut scene.characters;
+                    let enemies = &mut scene.enemies;
+
+                    let targets = match &do_it.target {
+                        ActionTarget::Single((team, id)) => {
+                            let v = match team {
+                                Team::Ally => characters,
+                                Team::Enemy => enemies,
+                            };
+                            &mut v[*id..*id + 1]
+                        }
+                        ActionTarget::WholeTeam(team) => match team {
+                            Team::Ally => characters,
+                            Team::Enemy => enemies,
+                        },
+                    };
+
+                    Rc::get_mut(&mut do_it.action)
+                        .unwrap()
+                        .go(&caster, targets, ctx)
+                }
             };
 
             match transition {
