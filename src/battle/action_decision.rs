@@ -2,7 +2,11 @@
 use crate::battle::turn_preparation::TurnPreparationState;
 use crate::battle::ActionType;
 use crate::battle::Actor;
+use crate::battle::ActorIdentifier;
+use crate::battle::CharacterKoSignal;
 use crate::battle::MacroBattleStates;
+use crate::battle::Target;
+use crate::battle::Team;
 use crate::Assets;
 use crate::BattleScene;
 use tetra::graphics::text::Text;
@@ -29,6 +33,18 @@ pub enum CharacterTurnDecisionState {
     //
 }
 
+impl CharacterKoSignal for CharacterTurnDecisionState {
+    fn on_character_ko(&mut self, id: ActorIdentifier) {
+        let shared_state: &mut Breadcrumbs = match self {
+            CharacterTurnDecisionState::Bash(bash_state) => &mut bash_state.shared,
+            CharacterTurnDecisionState::Menu(menu_state) => &mut menu_state.shared,
+        };
+        if shared_state.current_character == id.1 {
+            shared_state.ko_signal = true;
+        }
+    }
+}
+
 impl CharacterTurnDecisionState {
     pub fn new_turn(characters: &[Actor]) -> Option<CharacterTurnDecisionState> {
         if let Some((i, _)) = characters
@@ -40,6 +56,7 @@ impl CharacterTurnDecisionState {
                 shared: Breadcrumbs {
                     current_character: i,
                     current_item: 0,
+                    ko_signal: false,
                 },
             }));
         }
@@ -52,6 +69,7 @@ impl CharacterTurnDecisionState {
             shared: Breadcrumbs {
                 current_character: current + 1,
                 current_item: 0,
+                ko_signal: false,
             },
         }))
     }
@@ -67,6 +85,22 @@ impl CharacterTurnDecisionState {
 
             match result {
                 Transition::None => (),
+                Transition::Skip(current_id) => {
+                    if current_id == scene.characters.len() - 1 {
+                        // TODO Whole turn system
+                        scene.state = MacroBattleStates::TurnPreparation(TurnPreparationState {});
+                    } else if scene.end_of_fight() {
+                        // TODO Better way to handle end of battle
+                        scene.state = scene.get_end_state().unwrap();
+                        return;
+                    } else {
+                        // TODO Whole turn system and action structure passing.
+                        scene.state = CharacterTurnDecisionState::next_character(
+                            &scene.characters,
+                            current_id,
+                        );
+                    }
+                }
                 Transition::SwitchTo(new_state) => {
                     scene.state = MacroBattleStates::CharacterTurnDecision(new_state)
                 }
@@ -105,6 +139,7 @@ impl CharacterTurnDecisionState {
 
 enum Transition {
     None,
+    Skip(usize),                // last id
     Validate(AllyActionRecord), // TODO content
     SwitchTo(CharacterTurnDecisionState),
 }
@@ -113,6 +148,7 @@ enum Transition {
 struct Breadcrumbs {
     current_item: usize,
     current_character: usize,
+    ko_signal: bool,
 }
 
 pub struct Menu {
@@ -123,6 +159,9 @@ impl Menu {
     const MENU_NAMES: &'static [&'static str] = &["Bash", "PSI", "Item", "Guard", "Flee"];
 
     fn update(&mut self, characters: &[Actor], ctx: &Context) -> Transition {
+        if self.shared.ko_signal {
+            return Transition::Skip(self.shared.current_character);
+        }
         if is_key_pressed(ctx, Key::Left) {
             if self.shared.current_item > 0 {
                 self.shared.current_item -= 1;
@@ -153,7 +192,10 @@ impl Menu {
             if self.shared.current_item == 4 {
                 return Transition::Validate(AllyActionRecord {
                     id_in_team: self.shared.current_character,
-                    registered_speed: characters[self.shared.current_character].speed.multiplied(),
+                    registered_speed: characters[self.shared.current_character]
+                        .stats
+                        .speed
+                        .multiplied(),
                     action_type: ActionType::Guard,
                 });
             }
@@ -164,6 +206,7 @@ impl Menu {
                 shared: Breadcrumbs {
                     current_character: self.shared.current_character - 1,
                     current_item: 0,
+                    ko_signal: false,
                 },
             }));
         }
@@ -188,6 +231,9 @@ pub struct BashTargetSelection {
 
 impl BashTargetSelection {
     fn update(&mut self, ctx: &Context, allies: &[Actor], enemies: &[Actor]) -> Transition {
+        if self.shared.ko_signal {
+            return Transition::Skip(self.shared.current_character);
+        }
         if is_key_pressed(ctx, Key::Left) {
             if self.selected > 0 {
                 self.selected -= 1;
@@ -210,8 +256,11 @@ impl BashTargetSelection {
             return Transition::Validate(AllyActionRecord {
                 id_in_team: self.shared.current_character,
                 // TODO passing target id
-                action_type: ActionType::Bash,
-                registered_speed: allies[self.shared.current_character].speed.multiplied(),
+                action_type: ActionType::Bash(Target::Single((Team::Enemy, self.selected))),
+                registered_speed: allies[self.shared.current_character]
+                    .stats
+                    .speed
+                    .multiplied(),
             });
         }
 

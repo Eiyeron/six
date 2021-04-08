@@ -1,6 +1,7 @@
 mod battle;
 mod meters;
 mod puppet;
+mod timer;
 
 use crate::battle::BattleScene;
 use puppet::{GameState, Scene, Transition};

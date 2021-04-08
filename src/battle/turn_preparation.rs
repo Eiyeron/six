@@ -27,7 +27,7 @@ impl TurnPreparationState {
                         id_in_team: id,
                         team: Team::Enemy,
                         // TODO randomized speed
-                        speed: enemy.speed.multiplied(),
+                        speed: enemy.stats.speed.multiplied(),
                     })
                 }
             }

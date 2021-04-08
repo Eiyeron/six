@@ -1,17 +1,19 @@
 // Structs
 
+mod action;
 mod action_decision;
+mod stat;
 mod turn;
 mod turn_preparation;
 
 use crate::battle::action_decision::{AllyActionRecord, CharacterTurnDecisionState};
+use crate::battle::stat::{ActorStats, Stat};
 use crate::battle::turn::TurnUnrollState;
 use crate::battle::turn_preparation::TurnPreparationState;
 use crate::meters::{InstantMeter, Meter, RollingMeter};
 use crate::Assets;
 use crate::Scene;
 use crate::Transition;
-use rand::Rng;
 use std::collections::VecDeque;
 use tetra::graphics::text::Text;
 use tetra::graphics::{self, Color, DrawParams};
@@ -19,44 +21,15 @@ use tetra::math::Vec2;
 use tetra::time;
 use tetra::Context;
 
-use self::turn::Action;
-
-#[derive(Clone, Copy)]
-pub struct Stat {
-    pub base: u16,
-    pub modifier: i16,
+trait CharacterKoSignal {
+    fn on_character_ko(&mut self, id: ActorIdentifier);
 }
 
-impl Stat {
-    fn new(base: u16) -> Stat {
-        Stat { base, modifier: 0 }
-    }
-    fn multiplied(&self) -> u16 {
-        let mult: f32 = get_stat_multiplier(self.modifier) * f32::from(self.base);
-        mult as u16
-    }
-
-    // Returns the stat difference after buff
-    fn buff(&mut self, levels: i16) -> i16 {
-        let current_value = self.multiplied() as i16;
-        self.modifier = i16::clamp(self.modifier + levels, -3, 3);
-        let new_value = self.multiplied() as i16;
-
-        new_value - current_value
-    }
-}
-
-//Copying it for action exectuion
-#[derive(Clone)]
 pub struct Actor {
     pub name: String,
     pub hp: Meter,
     pub pp: Meter,
-    pub offense: Stat,
-    pub defense: Stat,
-    pub speed: Stat,
-    pub iq: Stat,
-    // TODO guts
+    pub stats: ActorStats,
 }
 
 impl Actor {
@@ -76,10 +49,12 @@ impl Actor {
             name: String::from(name),
             hp: Meter::Instant(InstantMeter::new(hp, max_hp)),
             pp: Meter::Instant(InstantMeter::new(pp, max_pp)),
-            offense: Stat::new(offense),
-            defense: Stat::new(defense),
-            speed: Stat::new(speed),
-            iq: Stat::new(iq),
+            stats: ActorStats {
+                offense: Stat::new(offense),
+                defense: Stat::new(defense),
+                speed: Stat::new(speed),
+                iq: Stat::new(iq),
+            },
         }
     }
 
@@ -99,10 +74,12 @@ impl Actor {
             name: String::from(name),
             hp: Meter::Rolling(RollingMeter::new(hp, max_hp)),
             pp: Meter::Rolling(RollingMeter::new(pp, max_pp)),
-            offense: Stat::new(offense),
-            defense: Stat::new(defense),
-            speed: Stat::new(speed),
-            iq: Stat::new(iq),
+            stats: ActorStats {
+                offense: Stat::new(offense),
+                defense: Stat::new(defense),
+                speed: Stat::new(speed),
+                iq: Stat::new(iq),
+            },
         }
     }
     fn update_meters(&mut self, dt: f32) {
@@ -113,28 +90,6 @@ impl Actor {
             meter.update(dt)
         }
     }
-}
-
-// Logic code decorrelated from structs
-
-fn get_stat_multiplier(modifier: i16) -> f32 {
-    match modifier {
-        -3 => 0.125,
-        -2 => 0.25,
-        -1 => 0.5,
-        0 => 1.,
-        1 => 1.5,
-        2 => 1.75,
-        3 => 2.,
-        _ => panic!("Invalid modifier"),
-    }
-}
-
-pub fn damage(offense: u16, attack_level: u16, defense: u16) -> u16 {
-    let mut rng = rand::thread_rng();
-    let random_multiplier = rng.gen_range(0.75..1.25);
-    let base = attack_level * offense - defense;
-    ((base as f32) * random_multiplier) as u16
 }
 
 // Turn structure idea
@@ -166,8 +121,9 @@ enum MacroBattleStates {
     CharacterFalls,
 }
 
+// TODO Replace with Action instead?
 pub enum ActionType {
-    Bash,
+    Bash(Target),
     Psi,
     Item,
     Guard,
@@ -176,6 +132,7 @@ pub enum ActionType {
 
 // Epiphany : the action could determine itself the target instead of hard-coding it.
 // Even better : the AI would decice when it's their turn
+// Update : I hate myself for inflicting this upon my poor soul.
 
 // Scene?
 
@@ -189,7 +146,7 @@ type ActorIdentifier = (Team, usize);
 
 #[derive(Clone)]
 // TODO ?
-enum ActionTarget {
+pub enum Target {
     Single(ActorIdentifier),
     WholeTeam(Team),
 }
@@ -219,9 +176,10 @@ impl BattleScene {
             Actor::character_from_stats("Four", 67, 67, 0, 0, 32, 20, 9, 23),
         ];
         BattleScene {
-            enemies: vec![Actor::enemy_from_stats(
-                "Robot", 53, 53, 0, 0, 35, 10, 17, 8,
-            )],
+            enemies: vec![
+                Actor::enemy_from_stats("Robot", 53, 53, 0, 0, 35, 10, 17, 8),
+                Actor::enemy_from_stats("Robot", 53, 53, 0, 0, 35, 10, 17, 8),
+            ],
             allies_actions: vec![],
             turn_order: VecDeque::new(),
             state: MacroBattleStates::CharacterTurnDecision(
@@ -260,20 +218,53 @@ impl BattleScene {
         let mut text = Text::new(enemy_summary, assets.headupdaisy.clone());
         text.draw(ctx, DrawParams::new().position(Vec2::new(336., 16.)));
     }
+
+    pub fn all_ko(arr: &[Actor]) -> bool {
+        arr.iter().all(|e| e.hp.current_and_max().0 == 0)
+    }
+
+    pub fn end_of_fight(&self) -> bool {
+        BattleScene::all_ko(&self.enemies) || BattleScene::all_ko(&self.characters)
+    }
+    pub fn get_end_state(&self) -> Option<MacroBattleStates> {
+        if BattleScene::all_ko(&self.enemies) {
+            return Some(MacroBattleStates::Win);
+        } else if BattleScene::all_ko(&self.characters) {
+            return Some(MacroBattleStates::GameOver);
+        }
+
+        None
+    }
 }
 
 impl Scene for BattleScene {
     fn update(&mut self, ctx: &mut Context, _assets: &Assets) -> tetra::Result<Transition> {
         let dt = time::get_delta_time(ctx).as_secs_f32();
-        for enemy in self.enemies.iter_mut() {
-            enemy.update_meters(dt);
+        let update_meters: bool = !self.end_of_fight();
+        if update_meters {
+            for enemy in self.enemies.iter_mut() {
+                enemy.update_meters(dt);
+            }
         }
-        for character in self.characters.iter_mut() {
+        for (id, character) in self.characters.iter_mut().enumerate() {
             let (previous_hp, _) = character.hp.current_and_max();
-            character.update_meters(dt);
-            if previous_hp > 0 && character.hp.current_and_max().0 == 0 {
-                println!("{} is K.O.", character.name);
-                // TODO death signaling
+            if update_meters {
+                character.update_meters(dt);
+                if previous_hp > 0 && character.hp.current_and_max().0 == 0 {
+                    println!("{} is K.O.", character.name);
+
+                    // TODO finish death signaling
+                    match &mut self.state {
+                        MacroBattleStates::CharacterTurnDecision(decision_state) => {
+                            decision_state.on_character_ko((Team::Ally, id));
+                        }
+                        MacroBattleStates::TurnPreparation(_) => {} // Shouldn't be necessary
+                        MacroBattleStates::TurnUnroll(_) => {
+                            // TODO signal ko during unroll
+                        }
+                        _ => (),
+                    }
+                }
             }
         }
 
@@ -299,6 +290,14 @@ impl Scene for BattleScene {
             }
             MacroBattleStates::TurnPreparation(_) => TurnPreparationState::draw(&self, ctx, assets),
             MacroBattleStates::TurnUnroll(_) => TurnUnrollState::draw(&self, ctx, assets),
+            MacroBattleStates::Win => {
+                let mut debug_text = Text::new("--Victory!--\n", assets.headupdaisy.clone());
+                debug_text.draw(ctx, DrawParams::new().position(Vec2::new(16., 360.)));
+            }
+            MacroBattleStates::GameOver => {
+                let mut debug_text = Text::new("--Game over!--\n", assets.headupdaisy.clone());
+                debug_text.draw(ctx, DrawParams::new().position(Vec2::new(16., 360.)));
+            }
             _ => (),
         }
         Ok(())
