@@ -3,7 +3,7 @@ use crate::battle::MacroBattleStates::TurnUnroll;
 use crate::battle::{Team, TurnAction, TurnUnrollState};
 use crate::{Assets, BattleScene};
 use tetra::graphics::text::Text;
-use tetra::graphics::DrawParams;
+use tetra::graphics::{Color, DrawParams};
 use tetra::math::Vec2;
 use tetra::Context;
 
@@ -42,6 +42,11 @@ impl TurnPreparationState {
     }
     pub fn draw(_scene: &BattleScene, ctx: &mut Context, assets: &Assets) {
         let mut debug_text = Text::new("--Turn Preparation--\n", assets.headupdaisy.clone());
-        debug_text.draw(ctx, DrawParams::new().position(Vec2::new(16., 360.)));
+        debug_text.draw(
+            ctx,
+            DrawParams::new()
+                .color(Color::rgb8(0xeb, 0xdb, 0xb2))
+                .position(Vec2::new(16., 360.)),
+        );
     }
 }

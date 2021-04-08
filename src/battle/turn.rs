@@ -13,7 +13,7 @@ use crate::timer::Timer;
 use crate::Assets;
 use crate::BattleScene;
 use tetra::graphics::text::Text;
-use tetra::graphics::DrawParams;
+use tetra::graphics::{Color, DrawParams};
 use tetra::math::Vec2;
 use tetra::Context;
 
@@ -251,6 +251,11 @@ impl TurnUnrollState {
                 TurnSubState::DoIt(_) => debug_text.push_str("Action happens"),
             }
         }
-        debug_text.draw(ctx, DrawParams::new().position(Vec2::new(16., 360.)));
+        debug_text.draw(
+            ctx,
+            DrawParams::new()
+                .color(Color::rgb8(0xeb, 0xdb, 0xb2))
+                .position(Vec2::new(16., 360.)),
+        );
     }
 }

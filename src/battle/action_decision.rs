@@ -10,7 +10,7 @@ use crate::battle::Team;
 use crate::Assets;
 use crate::BattleScene;
 use tetra::graphics::text::Text;
-use tetra::graphics::DrawParams;
+use tetra::graphics::{Color, DrawParams};
 use tetra::input::{is_key_pressed, Key};
 use tetra::math::Vec2;
 use tetra::Context;
@@ -220,7 +220,12 @@ impl Menu {
             "Selected: {}\n",
             Menu::MENU_NAMES[self.shared.current_item]
         ));
-        debug_text.draw(ctx, DrawParams::new().position(Vec2::new(16., 360.)));
+        debug_text.draw(
+            ctx,
+            DrawParams::new()
+                .color(Color::rgb8(0xeb, 0xdb, 0xb2))
+                .position(Vec2::new(16., 360.)),
+        );
     }
 }
 
@@ -271,6 +276,11 @@ impl BashTargetSelection {
         let enemy = &enemies[self.selected];
         let mut debug_text = Text::new("--Bash selection--\n", assets.headupdaisy.clone());
         debug_text.push_str(&format!("Char: {} ({})\n", enemy.name, self.selected));
-        debug_text.draw(ctx, DrawParams::new().position(Vec2::new(16., 360.)));
+        debug_text.draw(
+            ctx,
+            DrawParams::new()
+                .color(Color::rgb8(0xeb, 0xdb, 0xb2))
+                .position(Vec2::new(16., 360.)),
+        );
     }
 }

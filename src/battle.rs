@@ -212,11 +212,21 @@ impl BattleScene {
     fn draw_debug_hud(&self, ctx: &mut Context, assets: &Assets) {
         let character_summary = BattleScene::compute_hud_table("Characters", &self.characters);
         let mut text = Text::new(character_summary, assets.headupdaisy.clone());
-        text.draw(ctx, DrawParams::new().position(Vec2::new(16., 16.)));
+        text.draw(
+            ctx,
+            DrawParams::new()
+                .color(Color::rgb8(0xeb, 0xdb, 0xb2))
+                .position(Vec2::new(16., 16.)),
+        );
 
         let enemy_summary = BattleScene::compute_hud_table("Enemies", &self.enemies);
         let mut text = Text::new(enemy_summary, assets.headupdaisy.clone());
-        text.draw(ctx, DrawParams::new().position(Vec2::new(336., 16.)));
+        text.draw(
+            ctx,
+            DrawParams::new()
+                .color(Color::rgb8(0xeb, 0xdb, 0xb2))
+                .position(Vec2::new(336., 16.)),
+        );
     }
 
     pub fn all_ko(arr: &[Actor]) -> bool {
@@ -281,7 +291,7 @@ impl Scene for BattleScene {
     }
 
     fn draw(&mut self, ctx: &mut Context, assets: &Assets) -> tetra::Result<()> {
-        graphics::clear(ctx, Color::BLUE);
+        graphics::clear(ctx, Color::rgb8(0x28, 0x28, 0x28));
         self.draw_debug_hud(ctx, assets);
 
         match &self.state {
@@ -292,11 +302,21 @@ impl Scene for BattleScene {
             MacroBattleStates::TurnUnroll(_) => TurnUnrollState::draw(&self, ctx, assets),
             MacroBattleStates::Win => {
                 let mut debug_text = Text::new("--Victory!--\n", assets.headupdaisy.clone());
-                debug_text.draw(ctx, DrawParams::new().position(Vec2::new(16., 360.)));
+                debug_text.draw(
+                    ctx,
+                    DrawParams::new()
+                        .color(Color::rgb8(0xeb, 0xdb, 0xb2))
+                        .position(Vec2::new(16., 360.)),
+                );
             }
             MacroBattleStates::GameOver => {
                 let mut debug_text = Text::new("--Game over!--\n", assets.headupdaisy.clone());
-                debug_text.draw(ctx, DrawParams::new().position(Vec2::new(16., 360.)));
+                debug_text.draw(
+                    ctx,
+                    DrawParams::new()
+                        .color(Color::rgb8(0xeb, 0xdb, 0xb2))
+                        .position(Vec2::new(16., 360.)),
+                );
             }
             _ => (),
         }
