@@ -98,7 +98,7 @@ impl TurnUnrollState {
 
     // TODO ?
     fn process_ally_action(scene: &BattleScene, action: TurnAction) -> SubStateTransition {
-        let ally = &scene.characters[action.id_in_team];
+        let ally = &scene.allies[action.id_in_team];
         if ally.hp.current_and_max().0 == 0 {
             println!("Skipping action because K.O.");
             return SubStateTransition::NextSubState(TurnSubState::NextAction);
@@ -188,11 +188,11 @@ impl TurnUnrollState {
                     let (team, id) = &do_it.caster;
                     let id = *id;
                     let caster_stats = match team {
-                        Team::Ally => scene.characters[id].stats.clone(),
+                        Team::Ally => scene.allies[id].stats.clone(),
                         Team::Enemy => scene.enemies[id].stats.clone(),
                     };
 
-                    let characters = &mut scene.characters;
+                    let characters = &mut scene.allies;
                     let enemies = &mut scene.enemies;
 
                     let targets = match &do_it.target {
@@ -222,7 +222,7 @@ impl TurnUnrollState {
                         scene.state = scene.get_end_state().unwrap();
                     } else {
                         scene.state = MacroBattleStates::CharacterTurnDecision(
-                            match CharacterTurnDecisionState::new_turn(&scene.characters) {
+                            match CharacterTurnDecisionState::new_turn(&scene.allies) {
                                 Some(a) => a,
                                 _ => unreachable!(
                                     "[ERROR] Tried to transition into a new turn with all characters K.O."

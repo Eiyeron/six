@@ -158,7 +158,7 @@ pub struct TurnAction {
 }
 
 pub struct BattleScene {
-    pub characters: Vec<Actor>,
+    pub allies: Vec<Actor>,
     pub enemies: Vec<Actor>,
     // Test
     allies_actions: Vec<AllyActionRecord>,
@@ -169,7 +169,7 @@ pub struct BattleScene {
 
 impl BattleScene {
     pub fn dummy() -> BattleScene {
-        let characters = vec![
+        let allies = vec![
             Actor::character_from_stats("One", 98, 98, 46, 46, 45, 22, 16, 10),
             Actor::character_from_stats("Two", 115, 115, 0, 0, 35, 27, 12, 21),
             Actor::character_from_stats("Three", 82, 82, 73, 73, 28, 29, 20, 16),
@@ -183,9 +183,9 @@ impl BattleScene {
             allies_actions: vec![],
             turn_order: VecDeque::new(),
             state: MacroBattleStates::CharacterTurnDecision(
-                CharacterTurnDecisionState::new_turn(&characters).unwrap(),
+                CharacterTurnDecisionState::new_turn(&allies).unwrap(),
             ),
-            characters,
+            allies: allies,
         }
     }
 
@@ -210,7 +210,7 @@ impl BattleScene {
     }
 
     fn draw_debug_hud(&self, ctx: &mut Context, assets: &Assets) {
-        let character_summary = BattleScene::compute_hud_table("Characters", &self.characters);
+        let character_summary = BattleScene::compute_hud_table("Characters", &self.allies);
         let mut text = Text::new(character_summary, assets.headupdaisy.clone());
         text.draw(
             ctx,
@@ -234,12 +234,12 @@ impl BattleScene {
     }
 
     pub fn end_of_fight(&self) -> bool {
-        BattleScene::all_ko(&self.enemies) || BattleScene::all_ko(&self.characters)
+        BattleScene::all_ko(&self.enemies) || BattleScene::all_ko(&self.allies)
     }
     pub fn get_end_state(&self) -> Option<MacroBattleStates> {
         if BattleScene::all_ko(&self.enemies) {
             return Some(MacroBattleStates::Win);
-        } else if BattleScene::all_ko(&self.characters) {
+        } else if BattleScene::all_ko(&self.allies) {
             return Some(MacroBattleStates::GameOver);
         }
 
@@ -256,7 +256,7 @@ impl Scene for BattleScene {
                 enemy.update_meters(dt);
             }
         }
-        for (id, character) in self.characters.iter_mut().enumerate() {
+        for (id, character) in self.allies.iter_mut().enumerate() {
             let (previous_hp, _) = character.hp.current_and_max();
             if update_meters {
                 character.update_meters(dt);

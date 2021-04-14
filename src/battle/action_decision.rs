@@ -77,16 +77,16 @@ impl CharacterTurnDecisionState {
     pub fn update(scene: &mut BattleScene, ctx: &Context) {
         if let MacroBattleStates::CharacterTurnDecision(sub_state) = &mut scene.state {
             let result = match sub_state {
-                CharacterTurnDecisionState::Menu(menu) => menu.update(&scene.characters, ctx),
+                CharacterTurnDecisionState::Menu(menu) => menu.update(&scene.allies, ctx),
                 CharacterTurnDecisionState::Bash(bash) => {
-                    bash.update(ctx, &scene.characters, &scene.enemies)
+                    bash.update(ctx, &scene.allies, &scene.enemies)
                 }
             };
 
             match result {
                 Transition::None => (),
                 Transition::Skip(current_id) => {
-                    if current_id == scene.characters.len() - 1 {
+                    if current_id == scene.allies.len() - 1 {
                         // TODO Whole turn system
                         scene.state = MacroBattleStates::TurnPreparation(TurnPreparationState {});
                     } else if scene.end_of_fight() {
@@ -95,23 +95,21 @@ impl CharacterTurnDecisionState {
                         return;
                     } else {
                         // TODO Whole turn system and action structure passing.
-                        scene.state = CharacterTurnDecisionState::next_character(
-                            &scene.characters,
-                            current_id,
-                        );
+                        scene.state =
+                            CharacterTurnDecisionState::next_character(&scene.allies, current_id);
                     }
                 }
                 Transition::SwitchTo(new_state) => {
                     scene.state = MacroBattleStates::CharacterTurnDecision(new_state)
                 }
                 Transition::Validate(action) => {
-                    if action.id_in_team == scene.characters.len() - 1 {
+                    if action.id_in_team == scene.allies.len() - 1 {
                         // TODO Whole turn system
                         scene.state = MacroBattleStates::TurnPreparation(TurnPreparationState {});
                     } else {
                         // TODO Whole turn system and action structure passing.
                         scene.state = CharacterTurnDecisionState::next_character(
-                            &scene.characters,
+                            &scene.allies,
                             action.id_in_team,
                         );
                     }
@@ -124,11 +122,9 @@ impl CharacterTurnDecisionState {
     pub fn draw(scene: &BattleScene, ctx: &mut Context, assets: &Assets) {
         if let MacroBattleStates::CharacterTurnDecision(sub_state) = &scene.state {
             match sub_state {
-                CharacterTurnDecisionState::Menu(menu) => menu.draw(
-                    ctx,
-                    assets,
-                    &scene.characters[menu.shared.current_character],
-                ),
+                CharacterTurnDecisionState::Menu(menu) => {
+                    menu.draw(ctx, assets, &scene.allies[menu.shared.current_character])
+                }
                 CharacterTurnDecisionState::Bash(bash) => {
                     bash.draw(ctx, assets, &scene.enemies);
                 }
@@ -201,14 +197,22 @@ impl Menu {
             }
         }
         if is_key_pressed(ctx, Key::Backspace) && self.shared.current_character > 0 {
-            // TODO announce substate change
-            return Transition::SwitchTo(CharacterTurnDecisionState::Menu(Menu {
-                shared: Breadcrumbs {
-                    current_character: self.shared.current_character - 1,
-                    current_item: 0,
-                    ko_signal: false,
-                },
-            }));
+            let previous_characters = &characters[0..self.shared.current_character];
+            // TODO move that predicate somewhere else?
+            // TODO Also consider status effects later.
+            fn is_alive(tpl: &(usize, &Actor)) -> bool {
+                let &(_, actor) = tpl;
+                actor.hp.current_and_max().0 > 0
+            }
+            if let Some((i, _)) = previous_characters.iter().enumerate().rev().find(is_alive) {
+                return Transition::SwitchTo(CharacterTurnDecisionState::Menu(Menu {
+                    shared: Breadcrumbs {
+                        current_character: i,
+                        current_item: 0,
+                        ko_signal: false,
+                    },
+                }));
+            }
         }
         Transition::None
     }
@@ -260,7 +264,6 @@ impl BashTargetSelection {
         if is_key_pressed(ctx, Key::Enter) {
             return Transition::Validate(AllyActionRecord {
                 id_in_team: self.shared.current_character,
-                // TODO passing target id
                 action_type: ActionType::Bash(Target::Single((Team::Enemy, self.selected))),
                 registered_speed: allies[self.shared.current_character]
                     .stats
