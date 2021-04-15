@@ -4,11 +4,13 @@ use crate::battle::action::Action;
 use crate::battle::action::Bash;
 use crate::battle::action_decision::CharacterTurnDecisionState;
 use crate::battle::ActionType;
+use crate::battle::Actor;
 use crate::battle::ActorIdentifier;
 use crate::battle::MacroBattleStates;
 use crate::battle::Target;
 use crate::battle::Team;
 use crate::battle::TurnAction;
+use crate::battle::{BattleState, BattleStateTransition};
 use crate::timer::Timer;
 use crate::Assets;
 use crate::BattleScene;
@@ -32,7 +34,6 @@ pub struct Announce {
     time: Timer,
     announced_action: Rc<dyn Action>,
     caster: ActorIdentifier,
-    // TODO Keep track of target
     target: Target,
 }
 impl Announce {
@@ -55,7 +56,6 @@ impl Announce {
             return SubStateTransition::NextSubState(TurnSubState::DoIt(DoIt::new(
                 self.announced_action.clone(),
                 self.caster.clone(),
-                // TODO Keep track of target
                 self.target.clone(),
             )));
         }
@@ -126,8 +126,6 @@ impl TurnUnrollState {
             _ => unimplemented!(),
         };
         let caster = (Team::Ally, action_record.id_in_team);
-        // TODO Keep track of target
-
         SubStateTransition::NextSubState(TurnSubState::Announce(Announce::new(
             action, caster, target,
         )))
@@ -165,7 +163,76 @@ impl TurnUnrollState {
         }
     }
 
-    pub fn update(scene: &mut BattleScene, ctx: &Context) {
+    pub fn draw(scene: &BattleScene, ctx: &mut Context, assets: &Assets) {
+        let mut debug_text = Text::new("--Turn--\n", assets.headupdaisy.clone());
+        if let MacroBattleStates::TurnUnroll(state) = &scene.state {
+            match state.sub_state {
+                TurnSubState::NextAction => debug_text.push_str("Next action"),
+                TurnSubState::Announce(_) => debug_text.push_str("Announcing attack"),
+                TurnSubState::DoIt(_) => debug_text.push_str("Action happens"),
+            }
+        }
+        debug_text.draw(
+            ctx,
+            DrawParams::new()
+                .color(Color::rgb8(0xeb, 0xdb, 0xb2))
+                .position(Vec2::new(16., 360.)),
+        );
+    }
+
+    fn determine_transition_from_internal_transition(
+        transition: SubStateTransition,
+        scene: &BattleScene,
+    ) -> BattleStateTransition {
+        match transition {
+            SubStateTransition::EndOfTurn => {
+                // TODO Better way to select when to transition to end?
+                if scene.end_of_fight() {
+                    Some(scene.get_end_state().unwrap())
+                } else {
+                    Some(MacroBattleStates::CharacterTurnDecision(
+                        match CharacterTurnDecisionState::new_turn(&scene.allies) {
+                            Some(a) => a,
+                            _ => unreachable!(
+                                "[ERROR] Tried to transition into a new turn with all characters K.O."
+                            ),
+                        },
+                    ))
+                }
+            }
+            SubStateTransition::NextSubState(sub_state) => {
+                if scene.end_of_fight() {
+                    Some(scene.get_end_state().unwrap())
+                } else {
+                    Some(MacroBattleStates::TurnUnroll(TurnUnrollState { sub_state }))
+                }
+            }
+            SubStateTransition::None => None,
+        }
+    }
+
+    fn get_targeted_side<'a>(
+        allies: &'a mut [Actor],
+        enemies: &'a mut [Actor],
+        target: &Target,
+    ) -> &'a mut [Actor] {
+        match target {
+            Target::Single((team, id)) => {
+                let v = match team {
+                    Team::Ally => allies,
+                    Team::Enemy => enemies,
+                };
+                &mut v[*id..*id + 1]
+            }
+            Target::WholeTeam(team) => match team {
+                Team::Ally => allies,
+                Team::Enemy => enemies,
+            },
+        }
+    }
+}
+impl BattleState for TurnUnrollState {
+    fn update(scene: &mut BattleScene, ctx: &Context) -> BattleStateTransition {
         if let MacroBattleStates::TurnUnroll(state) = &mut scene.state {
             let transition = match &mut state.sub_state {
                 TurnSubState::NextAction => {
@@ -192,70 +259,21 @@ impl TurnUnrollState {
                         Team::Enemy => scene.enemies[id].stats.clone(),
                     };
 
-                    let characters = &mut scene.allies;
-                    let enemies = &mut scene.enemies;
-
-                    let targets = match &do_it.target {
-                        Target::Single((team, id)) => {
-                            let v = match team {
-                                Team::Ally => characters,
-                                Team::Enemy => enemies,
-                            };
-                            &mut v[*id..*id + 1]
-                        }
-                        Target::WholeTeam(team) => match team {
-                            Team::Ally => characters,
-                            Team::Enemy => enemies,
-                        },
-                    };
+                    let targets = TurnUnrollState::get_targeted_side(
+                        &mut scene.allies,
+                        &mut scene.enemies,
+                        &do_it.target,
+                    );
 
                     Rc::get_mut(&mut do_it.action)
                         .unwrap()
                         .go(&caster_stats, targets, ctx)
                 }
             };
-
-            match transition {
-                SubStateTransition::EndOfTurn => {
-                    // TODO Better way to select when to transition to end?
-                    if scene.end_of_fight() {
-                        scene.state = scene.get_end_state().unwrap();
-                    } else {
-                        scene.state = MacroBattleStates::CharacterTurnDecision(
-                            match CharacterTurnDecisionState::new_turn(&scene.allies) {
-                                Some(a) => a,
-                                _ => unreachable!(
-                                    "[ERROR] Tried to transition into a new turn with all characters K.O."
-                                ),
-                            },
-                        );
-                    }
-                }
-                SubStateTransition::NextSubState(sub_state) => {
-                    if scene.end_of_fight() {
-                        scene.state = scene.get_end_state().unwrap();
-                    } else {
-                        scene.state = MacroBattleStates::TurnUnroll(TurnUnrollState { sub_state });
-                    }
-                }
-                SubStateTransition::None => (),
-            };
+            return TurnUnrollState::determine_transition_from_internal_transition(
+                transition, scene,
+            );
         }
-    }
-    pub fn draw(scene: &BattleScene, ctx: &mut Context, assets: &Assets) {
-        let mut debug_text = Text::new("--Turn--\n", assets.headupdaisy.clone());
-        if let MacroBattleStates::TurnUnroll(state) = &scene.state {
-            match state.sub_state {
-                TurnSubState::NextAction => debug_text.push_str("Next action"),
-                TurnSubState::Announce(_) => debug_text.push_str("Announcing attack"),
-                TurnSubState::DoIt(_) => debug_text.push_str("Action happens"),
-            }
-        }
-        debug_text.draw(
-            ctx,
-            DrawParams::new()
-                .color(Color::rgb8(0xeb, 0xdb, 0xb2))
-                .position(Vec2::new(16., 360.)),
-        );
+        None
     }
 }

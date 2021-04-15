@@ -109,7 +109,7 @@ trait Drawable {
     fn draw(&mut self, ctx: &mut Context, assets: &Assets) -> tetra::Result<()>;
 }
 
-enum MacroBattleStates {
+pub enum MacroBattleStates {
     CharacterTurnDecision(CharacterTurnDecisionState),
     TurnPreparation(TurnPreparationState),
     TurnUnroll(TurnUnrollState),
@@ -156,6 +156,12 @@ pub struct TurnAction {
     team: Team,
     speed: u16,
 }
+
+pub trait BattleState {
+    fn update(scene: &mut BattleScene, ctx: &Context) -> BattleStateTransition;
+}
+
+pub type BattleStateTransition = Option<MacroBattleStates>;
 
 pub struct BattleScene {
     pub allies: Vec<Actor>,
@@ -278,13 +284,16 @@ impl Scene for BattleScene {
             }
         }
 
-        match &self.state {
+        let transition = match &self.state {
             MacroBattleStates::CharacterTurnDecision(_) => {
                 CharacterTurnDecisionState::update(self, ctx)
             }
             MacroBattleStates::TurnPreparation(_) => TurnPreparationState::update(self, ctx),
             MacroBattleStates::TurnUnroll(_) => TurnUnrollState::update(self, ctx),
-            _ => (),
+            _ => None,
+        };
+        if let Some(next_state) = transition {
+            self.state = next_state;
         }
 
         Ok(Transition::None)

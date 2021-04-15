@@ -7,6 +7,7 @@ use crate::battle::CharacterKoSignal;
 use crate::battle::MacroBattleStates;
 use crate::battle::Target;
 use crate::battle::Team;
+use crate::battle::{BattleState, BattleStateTransition};
 use crate::Assets;
 use crate::BattleScene;
 use tetra::graphics::text::Text;
@@ -74,7 +75,22 @@ impl CharacterTurnDecisionState {
         }))
     }
 
-    pub fn update(scene: &mut BattleScene, ctx: &Context) {
+    pub fn draw(scene: &BattleScene, ctx: &mut Context, assets: &Assets) {
+        if let MacroBattleStates::CharacterTurnDecision(sub_state) = &scene.state {
+            match sub_state {
+                CharacterTurnDecisionState::Menu(menu) => {
+                    menu.draw(ctx, assets, &scene.allies[menu.shared.current_character])
+                }
+                CharacterTurnDecisionState::Bash(bash) => {
+                    bash.draw(ctx, assets, &scene.enemies);
+                }
+            }
+        }
+    }
+}
+
+impl BattleState for CharacterTurnDecisionState {
+    fn update(scene: &mut BattleScene, ctx: &Context) -> BattleStateTransition {
         if let MacroBattleStates::CharacterTurnDecision(sub_state) = &mut scene.state {
             let result = match sub_state {
                 CharacterTurnDecisionState::Menu(menu) => menu.update(&scene.allies, ctx),
@@ -88,48 +104,38 @@ impl CharacterTurnDecisionState {
                 Transition::Skip(current_id) => {
                     if current_id == scene.allies.len() - 1 {
                         // TODO Whole turn system
-                        scene.state = MacroBattleStates::TurnPreparation(TurnPreparationState {});
+                        return Some(MacroBattleStates::TurnPreparation(TurnPreparationState {}));
                     } else if scene.end_of_fight() {
                         // TODO Better way to handle end of battle
-                        scene.state = scene.get_end_state().unwrap();
-                        return;
+                        return Some(scene.get_end_state().unwrap());
                     } else {
                         // TODO Whole turn system and action structure passing.
-                        scene.state =
-                            CharacterTurnDecisionState::next_character(&scene.allies, current_id);
+                        return Some(CharacterTurnDecisionState::next_character(
+                            &scene.allies,
+                            current_id,
+                        ));
                     }
                 }
                 Transition::SwitchTo(new_state) => {
-                    scene.state = MacroBattleStates::CharacterTurnDecision(new_state)
+                    return Some(MacroBattleStates::CharacterTurnDecision(new_state))
                 }
                 Transition::Validate(action) => {
-                    if action.id_in_team == scene.allies.len() - 1 {
+                    let id = action.id_in_team;
+                    scene.allies_actions.push(action);
+                    if id == scene.allies.len() - 1 {
                         // TODO Whole turn system
-                        scene.state = MacroBattleStates::TurnPreparation(TurnPreparationState {});
+                        return Some(MacroBattleStates::TurnPreparation(TurnPreparationState {}));
                     } else {
                         // TODO Whole turn system and action structure passing.
-                        scene.state = CharacterTurnDecisionState::next_character(
+                        return Some(CharacterTurnDecisionState::next_character(
                             &scene.allies,
-                            action.id_in_team,
-                        );
+                            id,
+                        ));
                     }
-                    scene.allies_actions.push(action);
                 }
             }
         }
-    }
-
-    pub fn draw(scene: &BattleScene, ctx: &mut Context, assets: &Assets) {
-        if let MacroBattleStates::CharacterTurnDecision(sub_state) = &scene.state {
-            match sub_state {
-                CharacterTurnDecisionState::Menu(menu) => {
-                    menu.draw(ctx, assets, &scene.allies[menu.shared.current_character])
-                }
-                CharacterTurnDecisionState::Bash(bash) => {
-                    bash.draw(ctx, assets, &scene.enemies);
-                }
-            }
-        }
+        None
     }
 }
 

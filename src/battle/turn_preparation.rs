@@ -1,5 +1,6 @@
 use crate::battle::MacroBattleStates;
 use crate::battle::MacroBattleStates::TurnUnroll;
+use crate::battle::{BattleState, BattleStateTransition};
 use crate::battle::{Team, TurnAction, TurnUnrollState};
 use crate::{Assets, BattleScene};
 use tetra::graphics::text::Text;
@@ -9,8 +10,8 @@ use tetra::Context;
 
 pub struct TurnPreparationState;
 
-impl TurnPreparationState {
-    pub fn update(scene: &mut BattleScene, _ctx: &Context) {
+impl BattleState for TurnPreparationState {
+    fn update(scene: &mut BattleScene, _ctx: &Context) -> BattleStateTransition {
         if let MacroBattleStates::TurnPreparation(_) = &mut scene.state {
             scene.turn_order.clear();
             for action in scene.allies_actions.iter() {
@@ -37,9 +38,14 @@ impl TurnPreparationState {
                 .sort_by(|a, b| b.speed.cmp(&a.speed)); // Reverse order
             scene.turn_order.make_contiguous().reverse();
             // TODO Consume actions (unroll turn)
-            scene.state = TurnUnroll(TurnUnrollState::new());
+
+            return Some(TurnUnroll(TurnUnrollState::new()));
         }
+        None
     }
+}
+
+impl TurnPreparationState {
     pub fn draw(_scene: &BattleScene, ctx: &mut Context, assets: &Assets) {
         let mut debug_text = Text::new("--Turn Preparation--\n", assets.headupdaisy.clone());
         debug_text.draw(
