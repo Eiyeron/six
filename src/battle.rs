@@ -251,38 +251,40 @@ impl BattleScene {
 
         None
     }
+
+    // Also signals K.O. event. Might be good to track in another function instead.
+    fn update_actor_meters(&mut self, dt: f32) {
+        if self.end_of_fight() {
+            return;
+        }
+        for enemy in self.enemies.iter_mut() {
+            enemy.update_meters(dt);
+        }
+        for (id, character) in self.allies.iter_mut().enumerate() {
+            let previous_hp = character.hp.current_and_max().0;
+            character.update_meters(dt);
+            if previous_hp > 0 && character.hp.current_and_max().0 == 0 {
+                println!("{} is K.O.", character.name);
+
+                // TODO finish death signaling
+                match &mut self.state {
+                    MacroBattleStates::CharacterTurnDecision(decision_state) => {
+                        decision_state.on_character_ko((Team::Ally, id));
+                    }
+                    MacroBattleStates::TurnUnroll(_) => {
+                        // TODO signal ko during unroll
+                    }
+                    _ => (),
+                }
+            }
+        }
+    }
 }
 
 impl Scene for BattleScene {
     fn update(&mut self, ctx: &mut Context, _assets: &Assets) -> tetra::Result<Transition> {
         let dt = time::get_delta_time(ctx).as_secs_f32();
-        let update_meters: bool = !self.end_of_fight();
-        if update_meters {
-            for enemy in self.enemies.iter_mut() {
-                enemy.update_meters(dt);
-            }
-        }
-        for (id, character) in self.allies.iter_mut().enumerate() {
-            let (previous_hp, _) = character.hp.current_and_max();
-            if update_meters {
-                character.update_meters(dt);
-                if previous_hp > 0 && character.hp.current_and_max().0 == 0 {
-                    println!("{} is K.O.", character.name);
-
-                    // TODO finish death signaling
-                    match &mut self.state {
-                        MacroBattleStates::CharacterTurnDecision(decision_state) => {
-                            decision_state.on_character_ko((Team::Ally, id));
-                        }
-                        MacroBattleStates::TurnPreparation(_) => {} // Shouldn't be necessary
-                        MacroBattleStates::TurnUnroll(_) => {
-                            // TODO signal ko during unroll
-                        }
-                        _ => (),
-                    }
-                }
-            }
-        }
+        self.update_actor_meters(dt);
 
         let transition = match &self.state {
             MacroBattleStates::CharacterTurnDecision(_) => {

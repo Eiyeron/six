@@ -37,8 +37,6 @@ impl BattleState for TurnPreparationState {
                 .make_contiguous()
                 .sort_by(|a, b| b.speed.cmp(&a.speed)); // Reverse order
             scene.turn_order.make_contiguous().reverse();
-            // TODO Consume actions (unroll turn)
-
             return Some(TurnUnroll(TurnUnrollState::new()));
         }
         None
