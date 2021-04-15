@@ -25,6 +25,9 @@ pub struct AllyActionRecord {
 pub enum CharacterTurnDecisionState {
     Menu(Menu),
     Bash(BashTargetSelection),
+    // TODO Special Move instead of Psi (1am brain)
+    // TODO Special move selection before target selection
+    Psi(PsiTargetSelection),
     //
     // SpecialMoveSelection(u8),
     // SpecialTargetSelection,
@@ -38,6 +41,7 @@ impl CharacterKoSignal for CharacterTurnDecisionState {
     fn on_character_ko(&mut self, id: ActorIdentifier) {
         let shared_state: &mut Breadcrumbs = match self {
             CharacterTurnDecisionState::Bash(bash_state) => &mut bash_state.shared,
+            CharacterTurnDecisionState::Psi(psi_state) => &mut psi_state.shared,
             CharacterTurnDecisionState::Menu(menu_state) => &mut menu_state.shared,
         };
         if shared_state.current_character == id.1 {
@@ -81,6 +85,11 @@ impl CharacterTurnDecisionState {
                 CharacterTurnDecisionState::Menu(menu) => {
                     menu.draw(ctx, assets, &scene.allies[menu.shared.current_character])
                 }
+                CharacterTurnDecisionState::Psi(psi) => psi.draw(
+                    ctx,
+                    assets,
+                    psi.get_possible_targets(&scene.allies, &scene.enemies),
+                ),
                 CharacterTurnDecisionState::Bash(bash) => {
                     bash.draw(ctx, assets, &scene.enemies);
                 }
@@ -96,6 +105,9 @@ impl BattleState for CharacterTurnDecisionState {
                 CharacterTurnDecisionState::Menu(menu) => menu.update(&scene.allies, ctx),
                 CharacterTurnDecisionState::Bash(bash) => {
                     bash.update(ctx, &scene.allies, &scene.enemies)
+                }
+                CharacterTurnDecisionState::Psi(psi) => {
+                    psi.update(ctx, &scene.allies, &scene.enemies)
                 }
             };
 
@@ -191,6 +203,14 @@ impl Menu {
                     },
                 ));
             }
+            if self.shared.current_item == 1 {
+                return Transition::SwitchTo(CharacterTurnDecisionState::Psi(PsiTargetSelection {
+                    shared: self.shared,
+                    selected: 0,
+                    aim_ko_actors: false,
+                    target_team: Team::Ally,
+                }));
+            }
             if self.shared.current_item == 4 {
                 return Transition::Validate(AllyActionRecord {
                     id_in_team: self.shared.current_character,
@@ -239,51 +259,132 @@ impl Menu {
     }
 }
 
-pub struct BashTargetSelection {
-    shared: Breadcrumbs,
-    selected: usize,
-}
+// Factorizing Target selection code for easier maintneance.
+trait TargetSelection {
+    fn current_selected_index(&self) -> usize;
 
-impl BashTargetSelection {
+    // Situations like skipping K.O. targets or not depend on implementation.
+    fn cycle_selection_left(&mut self, possible_targets: &[Actor]);
+    fn cycle_selection_right(&mut self, possible_targets: &[Actor]);
+
+    // By default aim enemies. Special cases (like healing techniques) will override this.
+    fn get_possible_targets<'a>(&self, _allies: &'a [Actor], enemies: &'a [Actor]) -> &'a [Actor] {
+        enemies
+    }
+    fn get_shared(&self) -> Breadcrumbs;
+
     fn update(&mut self, ctx: &Context, allies: &[Actor], enemies: &[Actor]) -> Transition {
-        if self.shared.ko_signal {
-            return Transition::Skip(self.shared.current_character);
+        if self.get_shared().ko_signal {
+            return Transition::Skip(self.current_selected_index());
         }
         if is_key_pressed(ctx, Key::Left) {
-            if self.selected > 0 {
-                self.selected -= 1;
-            }
+            self.cycle_selection_left(self.get_possible_targets(allies, enemies));
         }
         if is_key_pressed(ctx, Key::Right) {
             // TODO determine hud state from current character
-            if self.selected < enemies.len() - 1 {
-                self.selected += 1;
-            }
+            self.cycle_selection_right(self.get_possible_targets(allies, enemies));
         }
 
         if is_key_pressed(ctx, Key::Backspace) {
             return Transition::SwitchTo(CharacterTurnDecisionState::Menu(Menu {
-                shared: self.shared,
+                shared: self.get_shared(),
             }));
         }
 
         if is_key_pressed(ctx, Key::Enter) {
+            let current_character = self.get_shared().current_character;
             return Transition::Validate(AllyActionRecord {
-                id_in_team: self.shared.current_character,
-                action_type: ActionType::Bash(Target::Single((Team::Enemy, self.selected))),
-                registered_speed: allies[self.shared.current_character]
-                    .stats
-                    .speed
-                    .multiplied(),
+                id_in_team: current_character,
+                action_type: ActionType::Bash(Target::Single((
+                    Team::Enemy,
+                    self.current_selected_index(),
+                ))),
+                registered_speed: allies[current_character].stats.speed.multiplied(),
             });
         }
 
         Transition::None
     }
+}
 
+pub struct BashTargetSelection {
+    shared: Breadcrumbs,
+    selected: usize,
+}
+
+impl TargetSelection for BashTargetSelection {
+    fn current_selected_index(&self) -> usize {
+        self.selected
+    }
+    fn cycle_selection_left(&mut self, _possible_targets: &[Actor]) {
+        if self.selected > 0 {
+            self.selected = self.selected - 1;
+        }
+    }
+    fn cycle_selection_right(&mut self, possible_targets: &[Actor]) {
+        if self.selected < possible_targets.len() - 1 {
+            self.selected = self.selected + 1;
+        }
+    }
+    fn get_shared(&self) -> Breadcrumbs {
+        self.shared
+    }
+}
+
+impl BashTargetSelection {
     fn draw(&self, ctx: &mut Context, assets: &Assets, enemies: &[Actor]) {
         let enemy = &enemies[self.selected];
         let mut debug_text = Text::new("--Bash selection--\n", assets.headupdaisy.clone());
+        debug_text.push_str(&format!("Char: {} ({})\n", enemy.name, self.selected));
+        debug_text.draw(
+            ctx,
+            DrawParams::new()
+                .color(Color::rgb8(0xeb, 0xdb, 0xb2))
+                .position(Vec2::new(16., 360.)),
+        );
+    }
+}
+
+pub struct PsiTargetSelection {
+    shared: Breadcrumbs,
+    selected: usize,
+    // PSI-dependant values
+    target_team: Team,
+    aim_ko_actors: bool,
+}
+
+impl TargetSelection for PsiTargetSelection {
+    fn current_selected_index(&self) -> usize {
+        self.selected
+    }
+
+    fn cycle_selection_left(&mut self, _possible_targets: &[Actor]) {
+        if self.selected > 0 {
+            self.selected = self.selected - 1;
+        }
+    }
+    fn cycle_selection_right(&mut self, possible_targets: &[Actor]) {
+        if self.selected < possible_targets.len() - 1 {
+            self.selected = self.selected + 1;
+        }
+    }
+
+    fn get_shared(&self) -> Breadcrumbs {
+        self.shared
+    }
+
+    fn get_possible_targets<'a>(&self, allies: &'a [Actor], enemies: &'a [Actor]) -> &'a [Actor] {
+        match self.target_team {
+            Team::Ally => allies,
+            Team::Enemy => enemies,
+        }
+    }
+}
+
+impl PsiTargetSelection {
+    fn draw(&self, ctx: &mut Context, assets: &Assets, enemies: &[Actor]) {
+        let enemy = &enemies[self.selected];
+        let mut debug_text = Text::new("--PSI selection--\n", assets.headupdaisy.clone());
         debug_text.push_str(&format!("Char: {} ({})\n", enemy.name, self.selected));
         debug_text.draw(
             ctx,
