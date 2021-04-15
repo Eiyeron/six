@@ -40,6 +40,7 @@ fn main() -> tetra::Result {
     println!("Hello, world!");
     ContextBuilder::new("Hello World!", 640 * 2, 480 * 2)
         .timestep(Timestep::Fixed(60.0))
+        .high_dpi(true)
         .build()?
         .run(|ctx| GameState::new(ctx, BattleScene::dummy()))
 }
