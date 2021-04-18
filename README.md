@@ -18,13 +18,18 @@ documentation [here](https://tetra.seventeencups.net/installation/).
 
 ## What remains to do/polish
 
-- Bash target selection (I don't remember if I'm filtering on enemies still alive)
-- Other kinds of action than Bashing around
 - Code structure (Does it show that badly it's my first serious Rust project?)
 - Different kind of actions (item effects, special moves)
   - The current structure is vagely planned to have actions that aren't instant to allow
     animations and stuff.
+  - Determine the data structure to identity and flesh out actions (targeting, stat, skill set,
+    animation, etc...).
+  - Create actions (or borrow the ones from the Mother series `:-°`)
+- AI (scripting PoC would be a must, if purely useless in the context of a prototype)
+- Animation
+- Textbox ([Textbox](https://github.com/Eiyeron/Textbox) 2 - Electric Boogaloo)
 - Graphics?
+- Sounds? What is sound anyway?
 
 ## Used/Unused Asset attribution
 
