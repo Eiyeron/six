@@ -151,6 +151,23 @@ pub enum Target {
     WholeTeam(Team),
 }
 
+impl Target {
+    pub fn get_index(&self) -> Option<usize> {
+        match &self {
+            Target::Single((_, id)) => Some(*id),
+            Target::WholeTeam(_) => None,
+        }
+    }
+
+    pub fn get_team(&self) -> Team {
+        match &self {
+            Target::Single((team, _)) => team,
+            Target::WholeTeam(team) => team,
+        }
+        .clone()
+    }
+}
+
 pub struct TurnAction {
     id_in_team: usize,
     team: Team,
